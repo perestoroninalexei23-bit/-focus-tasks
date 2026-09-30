@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+
+<title>Focus Tasks</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",Arial,sans-serif;color:#f5f5f7;background:#0d0d0f}
+*{box-sizing:border-box}body{margin:0;background:#0d0d0f}button,input{font:inherit}
+.app{max-width:760px;margin:auto;min-height:100vh;padding:20px 16px 40px}
+h1{font-size:32px;margin:8px 0 18px}.tabs{display:flex;gap:8px;margin-bottom:18px}
+.tab{flex:1;border:0;border-radius:12px;padding:11px;background:#1d1d20;color:#aaa}
+.tab.active{background:#f5f5f7;color:#111}
+.card{background:#17171a;border:1px solid #29292d;border-radius:18px;padding:16px;margin-bottom:14px}
+.timer{text-align:center;padding:25px 12px}.mode{color:#aaa;font-size:14px;margin-bottom:8px}
+.time{font-variant-numeric:tabular-nums;font-size:72px;font-weight:700;letter-spacing:-3px}
+.current{color:#aaa;min-height:22px;margin:4px 0 18px}
+.controls{display:flex;gap:10px;justify-content:center}.primary,.secondary{border:0;border-radius:14px;padding:13px 20px}
+.primary{background:#f5f5f7;color:#111;font-weight:700}.secondary{background:#29292d;color:#fff}
+.add{display:flex;gap:8px}.add input{flex:1;background:#101012;border:1px solid #333;color:#fff;border-radius:12px;padding:12px}
+.add button{border:0;border-radius:12px;padding:0 16px;background:#f5f5f7;color:#111;font-weight:700}
+.task{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid #29292d}.task:last-child{border-bottom:0}
+.task button{margin-left:auto;border:0;background:none;color:#777}.task .name{flex:1}.task .mins{color:#999;font-size:13px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.stat{background:#101012;border-radius:14px;padding:14px}.num{font-size:25px;font-weight:700}.label{font-size:12px;color:#999;margin-top:4px}
+.hidden{display:none}.muted{color:#888;font-size:14px}.session{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #29292d;font-size:14px}.session:last-child{border:0}
+select{background:#101012;color:#fff;border:1px solid #333;border-radius:10px;padding:9px}
+.settings{display:flex;justify-content:space-between;align-items:center;margin:10px 0}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>Focus Tasks</h1>
+<div class="tabs">
+<button class="tab active" data-tab="focus">Фокус</button>
+<button class="tab" data-tab="tasks">Задачи</button>
+<button class="tab" data-tab="stats">Статистика</button>
+</div>
+
+<section id="focus">
+<div class="card timer">
+<div class="mode" id="mode">Фокус</div>
+<div class="time" id="time">25:00</div>
+<div class="current" id="current">Выбери задачу ниже</div>
+<div class="controls">
+<button class="secondary" id="reset">Сброс</button>
+<button class="primary" id="start">Старт</button>
+</div>
+</div>
+<div class="card">
+<div class="settings"><span>Длительность фокуса</span><select id="focusLen"><option>15</option><option selected>25</option><option>30</option><option>45</option><option>50</option><option>60</option></select></div>
+<div class="settings"><span>Перерыв</span><select id="breakLen"><option>5</option><option selected>5</option><option>10</option><option>15</option><option>20</option></select></div>
+</div>
+<div class="card">
+<strong>Выбрать задачу</strong>
+<div id="focusTasks"></div>
+</div>
+</section>
+
+<section id="tasks" class="hidden">
+<div class="card">
+<strong>Новая задача</strong>
+<div class="add" style="margin-top:10px"><input id="newTask" placeholder="Например: Английский"><button id="addTask">Добавить</button></div>
+</div>
+<div class="card"><div id="taskList"></div></div>
+</section>
+
+<section id="stats" class="hidden">
+<div class="card">
+<strong>Статистика</strong>
+<div class="stats" style="margin-top:12px">
+<div class="stat"><div class="num" id="totalToday">0</div><div class="label">минут сегодня</div></div>
+<div class="stat"><div class="num" id="sessionsToday">0</div><div class="label">сессий сегодня</div></div>
+<div class="stat"><div class="num" id="totalAll">0</div><div class="label">минут всего</div></div>
+<div class="stat"><div class="num" id="tasksCount">0</div><div class="label">задач</div></div>
+</div></div>
+<div class="card"><strong>По задачам</strong><div id="byTask" style="margin-top:10px"></div></div>
+<div class="card"><strong>История</strong><div id="history" style="margin-top:8px"></div></div>
+</section>
+</div>
+
+<script>
+const KEY="focus_tasks_v1";
+let state=JSON.parse(localStorage.getItem(KEY)||'null')||{
+ tasks:[{id:crypto.randomUUID(),name:"Английский",seconds:0},{id:crypto.randomUUID(),name:"Навигация",seconds:0}],
+ sessions:[], selected:null, focusMin:25, breakMin:5
+};
+let remaining=state.focusMin*60, running=false, interval=null, mode="focus";
+const $=id=>document.getElementById(id);
+function save(){localStorage.setItem(KEY,JSON.stringify(state));render();}
+function fmt(sec){sec=Math.max(0,Math.round(sec));return String(Math.floor(sec/60)).padStart(2,"0")+":"+String(sec%60).padStart(2,"0")}
+function selectedTask(){return state.tasks.find(t=>t.id===state.selected)}
+function render(){
+ $("time").textContent=fmt(remaining);
+ $("mode").textContent=mode==="focus"?"Фокус":"Перерыв";
+ $("current").textContent=selectedTask()?.name || "Выбери задачу ниже";
+ $("focusLen").value=state.focusMin;$("breakLen").value=state.breakMin;
+ $("taskList").innerHTML=state.tasks.length?state.tasks.map(t=>`<div class="task"><span class="name">${esc(t.name)}</span><span class="mins">${Math.floor(t.seconds/60)} мин</span><button onclick="removeTask('${t.id}')">Удалить</button></div>`).join(""):'<span class="muted">Пока нет задач.</span>';
+ $("focusTasks").innerHTML=state.tasks.length?state.tasks.map(t=>`<div class="task"><button style="margin:0;color:#fff" onclick="selectTask('${t.id}')">${state.selected===t.id?'●':'○'}</button><span class="name">${esc(t.name)}</span><span class="mins">${Math.floor(t.seconds/60)} мин</span></div>`).join(""):'<span class="muted">Добавь задачу во вкладке «Задачи».</span>';
+ let today=new Date().toISOString().slice(0,10);
+ let todaySessions=state.sessions.filter(s=>s.date===today);
+ let todaySec=todaySessions.reduce((a,s)=>a+s.seconds,0), allSec=state.sessions.reduce((a,s)=>a+s.seconds,0);
+ $("totalToday").textContent=Math.floor(todaySec/60);$("sessionsToday").textContent=todaySessions.length;
+ $("totalAll").textContent=Math.floor(allSec/60);$("tasksCount").textContent=state.tasks.length;
+ $("byTask").innerHTML=state.tasks.map(t=>`<div class="session"><span>${esc(t.name)}</span><b>${Math.floor(t.seconds/60)} мин</b></div>`).join("")||'<span class="muted">Нет данных.</span>';
+ $("history").innerHTML=state.sessions.slice(-20).reverse().map(s=>`<div class="session"><span>${esc(s.name)}<br><small class="muted">${s.date} ${s.time}</small></span><b>${Math.floor(s.seconds/60)} мин</b></div>`).join("")||'<span class="muted">История появится после первой завершённой сессии.</span>';
+}
+function esc(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+window.selectTask=id=>{state.selected=id;save()}
+window.removeTask=id=>{if(running&&state.selected===id)return alert("Останови таймер перед удалением задачи.");state.tasks=state.tasks.filter(t=>t.id!==id);if(state.selected===id)state.selected=null;save()}
+$("addTask").onclick=()=>{let n=$("newTask").value.trim();if(!n)return;state.tasks.push({id:crypto.randomUUID(),name:n,seconds:0});$("newTask").value="";save()}
+$("focusLen").onchange=e=>{state.focusMin=+e.target.value;if(!running){remaining=state.focusMin*60;render()}save()}
+$("breakLen").onchange=e=>{state.breakMin=+e.target.value;save()}
+$("start").onclick=()=>{
+ if(running){running=false;clearInterval(interval);$("start").textContent="Продолжить";return}
+ if(mode==="focus"&&!selectedTask())return alert("Сначала выбери задачу.");
+ running=true;$("start").textContent="Пауза";
+ interval=setInterval(()=>{
+   remaining--;
+   if(mode==="focus"&&selectedTask())selectedTask().seconds++;
+   if(remaining<=0){
+     clearInterval(interval);running=false;$("start").textContent="Старт";
+     if(mode==="focus"){let t=selectedTask();state.sessions.push({taskId:t.id,name:t.name,seconds:state.focusMin*60,date:new Date().toISOString().slice(0,10),time:new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})});mode="break";remaining=state.breakMin*60}
+     else{mode="focus";remaining=state.focusMin*60}
+     save(); alert(mode==="break"?"Фокус завершён. Время для перерыва.":"Перерыв завершён. Следующий фокус.");
+   } else {render()}
+ },1000);
+}
+$("reset").onclick=()=>{clearInterval(interval);running=false;mode="focus";remaining=state.focusMin*60;$("start").textContent="Старт";render()}
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");["focus","tasks","stats"].forEach(id=>$(id).classList.toggle("hidden",id!==b.dataset.tab));render()});
+
+render();
+</script>
+</body>
+</html>
